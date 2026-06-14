@@ -17,6 +17,12 @@ class PhilosopherActivity:
 
 
 class Philosopher(threading.Thread):
+    """Filósofo representado como thread Python (threading.Thread).
+
+    Cada filósofo executa um ciclo contínuo de pensar, ficar com fome,
+    adquirir garfos, comer e liberar recursos compartilhados.
+    """
+
     def __init__(
         self,
         philosopher_id: int,
@@ -36,6 +42,8 @@ class Philosopher(threading.Thread):
         self.right_fork = right_fork
         self.strategy = strategy
         self.config = config
+        # MECANISMO DE SINCRONIZAÇÃO: threading.Semaphore (garçom)
+        # Limita quantos filósofos entram na região crítica simultaneamente.
         self.waiter = waiter
 
     def run(self) -> None:
@@ -52,7 +60,7 @@ class Philosopher(threading.Thread):
             self._become_hungry()
 
             if self.strategy == "solution" and self.waiter is not None:
-                self.table.update_state(self.philosopher_id, PhilosopherState.WAITING, "Esperando garcom")
+                self.table.update_state(self.philosopher_id, PhilosopherState.WAITING, "Esperando garçom")
                 self.waiter.acquire()
 
             self._enter_critical_region()
@@ -62,7 +70,7 @@ class Philosopher(threading.Thread):
             if self.strategy == "solution" and self.waiter is not None:
                 self.waiter.release()
 
-        self.table.update_state(self.philosopher_id, PhilosopherState.THINKING, "Ciclo concluido")
+        self.table.update_state(self.philosopher_id, PhilosopherState.THINKING, "Ciclo concluído")
 
     def _sleep_scaled(self, duration: float) -> None:
         time.sleep(duration / self.config.simulation_speed)
@@ -75,12 +83,23 @@ class Philosopher(threading.Thread):
         self.table.update_state(self.philosopher_id, PhilosopherState.HUNGRY, "Com fome")
 
     def _enter_critical_region(self) -> None:
-        # REGIÃO CRÍTICA: aqui o filósofo disputa dois recursos compartilhados ao mesmo tempo.
+        # ===================================================
+        # REGIÃO CRÍTICA
+        # Acesso aos recursos compartilhados (garfos).
+        #
+        # Neste trecho, cada filósofo disputa dois Locks simultaneamente.
+        # A exclusão mútua é garantida por threading.Lock em cada garfo.
+        # O deadlock ocorre quando todos seguram o garfo esquerdo e
+        # aguardam indefinidamente o garfo direito — espera circular.
+        # ===================================================
+
         self.table.update_state(self.philosopher_id, PhilosopherState.WAITING, "Pegando garfo esquerdo")
         self.left_fork.acquire(self.philosopher_id)
         self.table.register_resource(self.philosopher_id, self.left_fork.label())
 
         if self.strategy == "deadlock":
+            # Barrier força todos a pegarem o garfo esquerdo ao mesmo tempo,
+            # maximizando o risco de deadlock na versão vulnerável.
             try:
                 self.table.deadlock_barrier.wait(timeout=5)
             except threading.BrokenBarrierError:
@@ -88,7 +107,10 @@ class Philosopher(threading.Thread):
 
         self.table.update_state(self.philosopher_id, PhilosopherState.WAITING, "Pegando garfo direito")
         self.right_fork.acquire(self.philosopher_id)
-        self.table.register_resource(self.philosopher_id, f"{self.left_fork.label()} + {self.right_fork.label()}")
+        self.table.register_resource(
+            self.philosopher_id,
+            f"{self.left_fork.label()} + {self.right_fork.label()}",
+        )
 
     def _eat(self) -> None:
         self.table.update_state(self.philosopher_id, PhilosopherState.EATING, "Comendo")

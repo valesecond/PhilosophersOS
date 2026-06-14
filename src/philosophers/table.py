@@ -12,7 +12,20 @@ from src.philosophers.philosopher import Philosopher, PhilosopherActivity
 from src.philosophers.states import PhilosopherState
 from src.synchronization.forks import Fork
 from src.utils.config import SimulationConfig
-from src.utils.constants import STATUS_READY
+from src.utils.constants import STATUS_READY, STATUS_RUNNING, STATUS_STOPPED
+
+
+@dataclass(slots=True)
+class DeadlockInfo:
+    blocked_philosophers: list[int]
+    waiting_resources: dict[int, str]
+    wait_time: float
+
+    def waiting_resources_summary(self) -> str:
+        if not self.waiting_resources:
+            return "-"
+        parts = [f"P{pid}→{resource}" for pid, resource in sorted(self.waiting_resources.items())]
+        return " | ".join(parts)
 
 
 @dataclass(slots=True)
@@ -27,6 +40,16 @@ class TableSnapshot:
 
 
 class DiningTable:
+    """Mesa compartilhada que coordena filósofos, garfos e estatísticas.
+
+    MECANISMOS DE SINCRONIZAÇÃO utilizados:
+    - threading.Lock (state_lock): protege o estado compartilhado dos filósofos
+    - threading.Lock (progress_lock): protege timestamp de progresso
+    - threading.Barrier (start_barrier): sincroniza início simultâneo
+    - threading.Barrier (deadlock_barrier): força cenário de deadlock
+    - threading.Event (stop_event): sinaliza encerramento da simulação
+    """
+
     def __init__(self, config: SimulationConfig) -> None:
         self.config = config
         self.num_philosophers = config.num_philosophers
@@ -44,6 +67,8 @@ class DiningTable:
         )
         self.strategy = "-"
         self.logger = None
+        self.deadlock_info: DeadlockInfo | None = None
+        self.status = STATUS_READY
 
     def assign_logger(self, logger) -> None:
         self.logger = logger
@@ -59,6 +84,8 @@ class DiningTable:
         with self.state_lock:
             self._states[philosopher_id].resources = resources
         self.mark_progress()
+        if self.logger is not None and hasattr(self.logger, "register_resource"):
+            self.logger.register_resource(philosopher_id, resources)
 
     def state_snapshot(self) -> dict[int, PhilosopherState]:
         with self.state_lock:
@@ -76,11 +103,27 @@ class DiningTable:
         with self.progress_lock:
             return time.perf_counter() - self.last_progress
 
-    def alert_deadlock(self) -> None:
+    def alert_deadlock(self, wait_time: float) -> None:
         self.statistics.mark_deadlock()
+        self.status = STATUS_STOPPED
+        snapshot = self.activity_snapshot()
+        blocked = [activity.philosopher_id for activity in snapshot if activity.state == PhilosopherState.WAITING]
+        waiting_resources = {
+            activity.philosopher_id: activity.resources
+            for activity in snapshot
+            if activity.state == PhilosopherState.WAITING
+        }
+        self.deadlock_info = DeadlockInfo(
+            blocked_philosophers=blocked,
+            waiting_resources=waiting_resources,
+            wait_time=wait_time,
+        )
         self.stop_event.set()
         if self.logger is not None:
-            self.logger.deadlock_alert("DEADLOCK DETECTADO")
+            self.logger.deadlock_alert(self.deadlock_info)
+
+    def mark_running(self) -> None:
+        self.status = STATUS_RUNNING
 
     def create_philosophers(self, *, strategy: str, waiter=None) -> list[Philosopher]:
         self.strategy = strategy
@@ -119,4 +162,5 @@ class DiningTable:
             deadlocks=int(stats["deadlocks"]),
             active_threads=int(stats["active_threads"]),
             strategy=str(stats["strategy"]),
+            status=self.status,
         )

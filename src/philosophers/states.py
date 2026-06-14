@@ -4,6 +4,8 @@ from enum import Enum
 
 
 class PhilosopherState(str, Enum):
+    """Estados obrigatórios do ciclo de vida de cada filósofo."""
+
     THINKING = "PENSANDO"
     HUNGRY = "COM FOME"
     WAITING = "ESPERANDO"

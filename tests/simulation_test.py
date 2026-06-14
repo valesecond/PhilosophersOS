@@ -30,7 +30,11 @@ class SimulationSmokeTests(unittest.TestCase):
         self.assertEqual(len(table.state_snapshot()), 3)
 
     def test_solution_uses_waiter_limit(self) -> None:
-        result = run_solution_version(SimulationConfig(num_philosophers=5, cycles=1, simulation_speed=10.0))
+        result = run_solution_version(
+            SimulationConfig(num_philosophers=5, cycles=1, simulation_speed=10.0),
+            wait_at_end=False,
+            clear_before=False,
+        )
         self.assertEqual(result["deadlocks"], 0)
         self.assertGreaterEqual(result["meals"], 1)
 

@@ -2,59 +2,66 @@ from __future__ import annotations
 
 import threading
 
-from src.monitors.execution_monitor import ExecutionMonitor
 from src.philosophers.table import DiningTable
+from src.ui.simulation_console import SimulationConsole
+from src.ui.theme import THEME
 from src.utils.config import SimulationConfig
 from src.utils.constants import STRATEGY_SOLUTION
-from src.utils.logger import SimulationLogger
+from src.utils.helpers import clear_screen
 
 
-def run_solution_version(config: SimulationConfig) -> dict[str, float | int | str]:
-    logger = SimulationLogger()
-    logger.banner()
-    logger.info("Executando simulacao com garcom semaforo para evitar deadlock.")
-    logger.info("Somente 4 filosofos podem disputar recursos simultaneamente.")
+def run_solution_version(
+    config: SimulationConfig,
+    *,
+    clear_before: bool = True,
+    wait_at_end: bool = True,
+    enter_prompt: str = "Pressione Enter para voltar ao menu...",
+) -> dict:
+    if clear_before:
+        clear_screen()
+
+    waiter_limit = min(config.waiter_limit, max(1, config.num_philosophers - 1))
+    console = SimulationConsole()
+    console.open_session(
+        strategy=STRATEGY_SOLUTION,
+        num_philosophers=config.num_philosophers,
+        border_style=THEME.solution_border,
+    )
+    console.info(f"Garçom semáforo ativo — máximo de {waiter_limit} filósofos disputando garfos.")
 
     table = DiningTable(config)
-    table.assign_logger(logger)
-    waiter = threading.Semaphore(4)
+    table.assign_logger(console)
+    table.mark_running()
+    waiter = threading.Semaphore(waiter_limit)
     philosophers = table.create_philosophers(strategy="solution", waiter=waiter)
-    dashboard = ExecutionMonitor(lambda: _build_dashboard(table), refresh_rate=0.2 / config.simulation_speed, stop_event=table.stop_event)
 
     for philosopher in philosophers:
         philosopher.start()
-
-    dashboard.start()
 
     for philosopher in philosophers:
         philosopher.join()
 
     table.stop_event.set()
-    dashboard.join(timeout=1)
 
     snapshot = table.snapshot()
-    return {
+    result = {
         "elapsed": snapshot.elapsed,
         "meals": snapshot.meals,
         "deadlocks": snapshot.deadlocks,
         "active_threads": snapshot.active_threads,
         "strategy": STRATEGY_SOLUTION,
+        "deadlock_info": None,
+        "num_philosophers": config.num_philosophers,
     }
 
-
-def _build_dashboard(table: DiningTable):
-    from rich.console import Group
-    from rich.panel import Panel
-    from rich.table import Table
-
-    snapshot = table.snapshot()
-    summary = Table.grid(expand=True)
-    summary.add_column(justify="left")
-    summary.add_column(justify="right")
-    summary.add_row("Tempo de execucao", f"{snapshot.elapsed:0.2f}s")
-    summary.add_row("Refeicoes", str(snapshot.meals))
-    summary.add_row("Deadlocks detectados", str(snapshot.deadlocks))
-    summary.add_row("Threads ativas", str(snapshot.active_threads))
-    summary.add_row("Estrategia", snapshot.strategy)
-    summary.add_row("Status", snapshot.status)
-    return Panel(Group(summary, table.render_activity_table()), title="PHILOSOPHERS OS", border_style="green")
+    console.show_summary(
+        elapsed=snapshot.elapsed,
+        strategy=STRATEGY_SOLUTION,
+        meals=snapshot.meals,
+        deadlocks=snapshot.deadlocks,
+        num_philosophers=config.num_philosophers,
+        active_threads=snapshot.active_threads,
+    )
+    if wait_at_end:
+        console.wait_enter(enter_prompt)
+    return result
