@@ -1,0 +1,10 @@
+{
+  "num_philosophers": 5,
+  "thinking_time": 0.8,
+  "eating_time": 0.6,
+  "simulation_speed": 1.0,
+  "cycles": 3,
+  "deadlock_timeout": 3.0,
+  "deadlock_poll_interval": 0.2,
+  "waiter_limit": 4
+}

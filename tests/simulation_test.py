@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from philosophers.states import PhilosopherState
-from philosophers.table import DiningTable
-from synchronization.forks import Fork
-from synchronization.solution_version import SolutionSimulation
+from src.philosophers.states import PhilosopherState
+from src.philosophers.table import DiningTable
+from src.synchronization.forks import Fork
+from src.synchronization.solution_version import run_solution_version
+from src.utils.config import SimulationConfig
 
 
 class SimulationSmokeTests(unittest.TestCase):
     def test_states_include_required_values(self) -> None:
-        self.assertEqual(PhilosopherState.THINKING.value, "THINKING")
-        self.assertEqual(PhilosopherState.HUNGRY.value, "HUNGRY")
-        self.assertEqual(PhilosopherState.WAITING.value, "WAITING")
-        self.assertEqual(PhilosopherState.EATING.value, "EATING")
-        self.assertEqual(PhilosopherState.RELEASING.value, "RELEASING")
+        self.assertEqual(PhilosopherState.THINKING.value, "PENSANDO")
+        self.assertEqual(PhilosopherState.HUNGRY.value, "COM FOME")
+        self.assertEqual(PhilosopherState.WAITING.value, "ESPERANDO")
+        self.assertEqual(PhilosopherState.EATING.value, "COMENDO")
+        self.assertEqual(PhilosopherState.RELEASING.value, "LIBERANDO")
 
     def test_fork_uses_lock(self) -> None:
         fork = Fork(0)
@@ -23,14 +24,15 @@ class SimulationSmokeTests(unittest.TestCase):
         fork.release()
 
     def test_table_builds_custom_number_of_philosophers(self) -> None:
-        table = DiningTable(num_philosophers=3)
+        table = DiningTable(SimulationConfig(num_philosophers=3, cycles=1))
         self.assertEqual(table.num_philosophers, 3)
         self.assertEqual(len(table.forks), 3)
-        self.assertEqual(len(table.get_states_snapshot()), 3)
+        self.assertEqual(len(table.state_snapshot()), 3)
 
     def test_solution_uses_waiter_limit(self) -> None:
-        simulation = SolutionSimulation(num_philosophers=5)
-        self.assertEqual(simulation.waiter._value, 4)
+        result = run_solution_version(SimulationConfig(num_philosophers=5, cycles=1, simulation_speed=10.0))
+        self.assertEqual(result["deadlocks"], 0)
+        self.assertGreaterEqual(result["meals"], 1)
 
 
 if __name__ == "__main__":
